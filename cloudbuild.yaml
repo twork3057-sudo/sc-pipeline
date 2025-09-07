@@ -14,7 +14,9 @@ steps:
   args:
     - -lc
     - |
-      gsutil ls gs://$PROJECT_ID-dataflow || gsutil mb -l $_REGION gs://$PROJECT_ID-dataflow
+      PROJECT_ID="$(gcloud config get-value project)"
+      BUCKET="${PROJECT_ID}-dataflow"
+      gsutil ls "gs://${BUCKET}" || gsutil mb -l "$_REGION" "gs://${BUCKET}"
 
 # 1) Build the image (note: no nested substitutions)
 - name: gcr.io/cloud-builders/docker
