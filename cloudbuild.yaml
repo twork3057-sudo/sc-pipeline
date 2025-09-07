@@ -1,4 +1,4 @@
-# cloudbuild.yaml for sc-pipeline
+# cloudbuild.yaml for sc-pipeline - hardcoded values
 options:
   logging: CLOUD_LOGGING_ONLY
   substitution_option: ALLOW_LOOSE
@@ -67,33 +67,20 @@ steps:
       echo "Verifying template was created..."
       gsutil ls -la gs://${_BUCKET}/templates/sc-pipeline.json
 
-# 5) Get dynamic resource information and run the pipeline
+# 5) Run the pipeline with hardcoded resource values
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
     - '-c'
     - |
-      echo "Gathering resource information..."
-      
-      # Get Redis host
-      REDIS_HOST=$(gcloud redis instances describe sc-idcache --region=${_REGION} --format='value(host)')
-      echo "Redis host: $REDIS_HOST"
-      
-      # Get Cloud Run ID service URL
-      ID_URL=$(gcloud run services describe id-service --region=${_REGION} --format='value(status.url)')
-      ID_URL_HOST=$(echo "$ID_URL" | sed 's#https://##')
-      echo "ID service URL: https://$ID_URL_HOST/id"
-      
-      # Get AlloyDB host
-      ADB_HOST=$(gcloud alloydb instances describe sc-primary --cluster=sc-cluster --region=${_REGION} --format='value(ipAddress)')
-      echo "AlloyDB host: $ADB_HOST"
+      echo "Starting Dataflow pipeline..."
       
       # Generate unique job name with timestamp
       JOB_NAME="sc-pipeline-$(date +%Y%m%d-%H%M%S)"
       echo "Starting job: $JOB_NAME"
       
-      # Run the Dataflow pipeline
-      gcloud dataflow flex-template run $JOB_NAME \
+      # Run the Dataflow pipeline with hardcoded values
+      gcloud dataflow flex-template run "$JOB_NAME" \
         --region=${_REGION} \
         --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \
         --service-account-email=${_SERVICE_ACCOUNT} \
@@ -101,7 +88,7 @@ steps:
         --subnetwork=${_SUBNETWORK} \
         --disable-public-ips \
         --max-workers=10 \
-        --parameters="project=${PROJECT_ID},region=${_REGION},supplier_sub=projects/${PROJECT_ID}/subscriptions/supplier.sub,material_sub=projects/${PROJECT_ID}/subscriptions/material.sub,plant_sub=projects/${PROJECT_ID}/subscriptions/plant.sub,redis_host=$REDIS_HOST,id_service_url=https://$ID_URL_HOST/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=$ADB_HOST,adb_port=5432,adb_user=postgres,adb_password=Str0ngP@ss!,adb_db=supplychain"
+        --parameters="project=${PROJECT_ID},region=${_REGION},supplier_sub=projects/${PROJECT_ID}/subscriptions/supplier.sub,material_sub=projects/${PROJECT_ID}/subscriptions/material.sub,plant_sub=projects/${PROJECT_ID}/subscriptions/plant.sub,redis_host=REPLACE_WITH_ACTUAL_REDIS_HOST,id_service_url=REPLACE_WITH_ACTUAL_ID_SERVICE_URL/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=REPLACE_WITH_ACTUAL_ADB_HOST,adb_port=5432,adb_user=postgres,adb_password=Str0ngP@ss!,adb_db=supplychain"
       
       echo "Pipeline started successfully!"
       echo "Job name: $JOB_NAME"
