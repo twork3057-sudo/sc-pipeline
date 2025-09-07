@@ -1,11 +1,11 @@
-# cloudbuild.yaml  (for sc-pipeline)
+# cloudbuild.yaml (for sc-pipeline)
 options:
   logging: CLOUD_LOGGING_ONLY
 
 substitutions:
   _REGION: us-central1
   _REPO: services
-  _BUCKET: rare-result-471319-e6-dataflow   # must be all lowercase and EXIST/BE CREATED
+  _BUCKET: rare-result-471319-e6-dataflow
   _IMAGE: us-central1-docker.pkg.dev/$PROJECT_ID/$_REPO/sc-pipeline:latest
   _TEMPLATE_PATH: gs://$_BUCKET/templates/sc-pipeline.json
 
@@ -18,7 +18,12 @@ steps:
     - |
       gsutil ls gs://$_BUCKET || gsutil mb -l $_REGION gs://$_BUCKET
 
-# 1) Build and push pipeline image
+# (optional) print the resolved values once to verify substitutions
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  entrypoint: bash
+  args: ['-lc', 'echo PROJECT:$PROJECT_ID; echo IMAGE:$_IMAGE; echo BUCKET:$_BUCKET']
+
+# 1) Build and push pipeline image (use the computed $_IMAGE)
 - name: gcr.io/cloud-builders/docker
   args: ['build','-t','$_IMAGE','.']
 
