@@ -8,14 +8,23 @@ substitutions:
   _TEMPLATE_PATH: gs://$PROJECT_ID-dataflow/templates/sc-pipeline.json
 
 steps:
-# Build and push pipeline image
+# Ensure the template bucket exists (no-op if already exists)
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      gcloud storage buckets create gs://$PROJECT_ID-dataflow --location=${_REGION} || true
+      gcloud storage buckets create gs://$PROJECT_ID-dataflow/tmp --location=${_REGION} || true
+
+# Build & push the pipeline image
 - name: gcr.io/cloud-builders/docker
   args: ['build','-t','$_IMAGE','.']
 
 - name: gcr.io/cloud-builders/docker
   args: ['push','$_IMAGE']
 
-# Build Flex Template spec into GCS
+# Build the Flex Template spec JSON in GCS
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk
   entrypoint: gcloud
   args:
@@ -26,4 +35,3 @@ steps:
       '--metadata-file','metadata.json'
     ]
 
-# (optional) set Artifact Registry reader for DF worker SA
