@@ -1,12 +1,13 @@
-# cloudbuild.yaml (for sc-pipeline)
+# cloudbuild.yaml for sc-pipeline
 options:
   logging: CLOUD_LOGGING_ONLY
 
 substitutions:
+  _PROJECT: rare-result-471319-e6            
   _REGION: us-central1
   _REPO: services
-  _BUCKET: rare-result-471319-e6-dataflow
-  _IMAGE: us-central1-docker.pkg.dev/$PROJECT_ID/$_REPO/sc-pipeline:latest
+  _BUCKET: rare-result-471319-e6-dataflow    
+  _IMAGE: us-central1-docker.pkg.dev/$_PROJECT/$_REPO/sc-pipeline:latest
   _TEMPLATE_PATH: gs://$_BUCKET/templates/sc-pipeline.json
 
 steps:
@@ -18,19 +19,15 @@ steps:
     - |
       gsutil ls gs://$_BUCKET || gsutil mb -l $_REGION gs://$_BUCKET
 
-# (optional) print the resolved values once to verify substitutions
-- name: gcr.io/google.com/cloudsdktool/cloud-sdk
-  entrypoint: bash
-  args: ['-lc', 'echo PROJECT:$PROJECT_ID; echo IMAGE:$_IMAGE; echo BUCKET:$_BUCKET']
-
-# 1) Build and push pipeline image (use the computed $_IMAGE)
+# 1) Build the pipeline image
 - name: gcr.io/cloud-builders/docker
   args: ['build','-t','$_IMAGE','.']
 
+# 2) Push the image
 - name: gcr.io/cloud-builders/docker
   args: ['push','$_IMAGE']
 
-# 2) Build the Flex Template spec in GCS
+# 3) Build the Flex Template spec in GCS
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk
   args:
     [
