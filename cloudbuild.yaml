@@ -78,7 +78,6 @@ steps:
         --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \
         --network=default \
         --subnetwork=regions/us-central1/subnetworks/default \
-        --disable-public-ips \
         --max-workers=10 \
         --parameters="project=${PROJECT_ID},region=us-central1,supplier_sub=projects/${PROJECT_ID}/subscriptions/supplier.sub,material_sub=projects/${PROJECT_ID}/subscriptions/material.sub,plant_sub=projects/${PROJECT_ID}/subscriptions/plant.sub,redis_host=REDIS_HOST_HERE,id_service_url=ID_SERVICE_URL_HERE/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=ADB_HOST_HERE,adb_port=5432,adb_user=postgres,adb_password=Str0ngP@ss!,adb_db=supplychain"
       
