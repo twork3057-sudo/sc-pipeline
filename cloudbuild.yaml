@@ -3,36 +3,33 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 substitutions:
-  _PROJECT: rare-result-471319-e6            
   _REGION: us-central1
-  _REPO: services
-  _BUCKET: rare-result-471319-e6-dataflow    
-  _IMAGE: us-central1-docker.pkg.dev/$_PROJECT/$_REPO/sc-pipeline:latest
-  _TEMPLATE_PATH: gs://$_BUCKET/templates/sc-pipeline.json
+  _REPO: services           
+  _BUCKET: rare-result-471319-e6-dataflow   
 
 steps:
-# 0) Ensure the Dataflow bucket exists (idempotent)
+# 0) Make sure the Dataflow bucket exists
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk
   entrypoint: bash
+  args: ['-lc', 'gsutil ls gs://${_BUCKET} || gsutil mb -l ${_REGION} gs://${_BUCKET}']
+
+# 1) Build image
+- name: gcr.io/cloud-builders/docker
   args:
-    - -lc
-    - |
-      gsutil ls gs://$_BUCKET || gsutil mb -l $_REGION gs://$_BUCKET
+    ['build',
+     '-t','us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest',
+     '.']
 
-# 1) Build the pipeline image
+# 2) Push image
 - name: gcr.io/cloud-builders/docker
-  args: ['build','-t','$_IMAGE','.']
+  args:
+    ['push','us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest']
 
-# 2) Push the image
-- name: gcr.io/cloud-builders/docker
-  args: ['push','$_IMAGE']
-
-# 3) Build the Flex Template spec in GCS
+# 3) Build the Dataflow Flex Template spec in GCS
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk
   args:
-    [
-      'dataflow','flex-template','build','$_TEMPLATE_PATH',
-      '--image','$_IMAGE',
-      '--sdk-language','PYTHON',
-      '--metadata-file','metadata.json'
-    ]
+    ['dataflow','flex-template','build','gs://${_BUCKET}/templates/sc-pipeline.json',
+     '--image','us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest',
+     '--sdk-language','PYTHON',
+     '--metadata-file','metadata.json']
+
