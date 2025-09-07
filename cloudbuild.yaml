@@ -6,8 +6,10 @@ options:
 substitutions:
   _REGION: us-central1
   _REPO: services           
-  _BUCKET: rare-result-471319-e6-dataflow   
-
+  _BUCKET: ${PROJECT_ID}-dataflow
+  _SERVICE_ACCOUNT: df-domains@${PROJECT_ID}.iam.gserviceaccount.com
+  _SUBNETWORK: regions/us-central1/subnetworks/default
+  
 steps:
 # 0) Make sure the Dataflow bucket exists
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
@@ -38,7 +40,6 @@ steps:
   args:
     - 'push'
     - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest'
-
 - name: gcr.io/cloud-builders/docker:latest
   args:
     - 'push'
@@ -57,7 +58,7 @@ steps:
         --metadata-file=metadata.json \
         --project=${PROJECT_ID}
 
-# Optional: Test template creation
+# 4) Verify template creation
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
@@ -66,4 +67,44 @@ steps:
       echo "Verifying template was created..."
       gsutil ls -la gs://${_BUCKET}/templates/sc-pipeline.json
 
-timeout: 1200s
+# 5) Get dynamic resource information and run the pipeline
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+  entrypoint: bash
+  args:
+    - '-c'
+    - |
+      echo "Gathering resource information..."
+      
+      # Get Redis host
+      REDIS_HOST=$(gcloud redis instances describe sc-idcache --region=${_REGION} --format='value(host)')
+      echo "Redis host: $REDIS_HOST"
+      
+      # Get Cloud Run ID service URL
+      ID_URL=$(gcloud run services describe id-service --region=${_REGION} --format='value(status.url)')
+      ID_URL_HOST=$(echo "$ID_URL" | sed 's#https://##')
+      echo "ID service URL: https://$ID_URL_HOST/id"
+      
+      # Get AlloyDB host
+      ADB_HOST=$(gcloud alloydb instances describe sc-primary --cluster=sc-cluster --region=${_REGION} --format='value(ipAddress)')
+      echo "AlloyDB host: $ADB_HOST"
+      
+      # Generate unique job name with timestamp
+      JOB_NAME="sc-pipeline-$(date +%Y%m%d-%H%M%S)"
+      echo "Starting job: $JOB_NAME"
+      
+      # Run the Dataflow pipeline
+      gcloud dataflow flex-template run $JOB_NAME \
+        --region=${_REGION} \
+        --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \
+        --service-account-email=${_SERVICE_ACCOUNT} \
+        --network=default \
+        --subnetwork=${_SUBNETWORK} \
+        --disable-public-ips \
+        --max-workers=10 \
+        --parameters=project=${PROJECT_ID},region=${_REGION},supplier_sub=projects/${PROJECT_ID}/subscriptions/supplier.sub,material_sub=projects/${PROJECT_ID}/subscriptions/material.sub,plant_sub=projects/${PROJECT_ID}/subscriptions/plant.sub,redis_host=$REDIS_HOST,id_service_url=https://$ID_URL_HOST/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=$ADB_HOST,adb_port=5432,adb_user=postgres,adb_password=Str0ngP@ss!,adb_db=supplychain
+      
+      echo "Pipeline started successfully!"
+      echo "Job name: $JOB_NAME"
+      echo "Monitor at: https://console.cloud.google.com/dataflow/jobs/${_REGION}/$JOB_NAME?project=${PROJECT_ID}"
+
+timeout: 1800s
