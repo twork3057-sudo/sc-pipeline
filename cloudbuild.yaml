@@ -76,7 +76,6 @@ steps:
       gcloud dataflow flex-template run sc-pipeline-20250107-001 \
         --region=us-central1 \
         --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \
-        --service-account-email=df-domains@${PROJECT_ID}.iam.gserviceaccount.com \
         --network=default \
         --subnetwork=regions/us-central1/subnetworks/default \
         --disable-public-ips \
