@@ -1,7 +1,7 @@
 import json, logging, hashlib, os, requests
 from datetime import datetime, timezone
 import apache_beam as beam
-from apache_beam.options.pipeline_options import PipelineOptions, SetupOptions, StandardOptions
+from apache_beam.options.pipeline_options import PipelineOptions, SetupOptions, StandardOptions, GoogleCloudOptions
 from apache_beam.io.gcp.pubsub import ReadFromPubSub
 from apache_beam.io.gcp.bigquery import WriteToBigQuery
 import psycopg2
@@ -69,12 +69,14 @@ class ResolvePK(beam.DoFn):
     
     def _mint(self, domain, src_sys, src_id):
         try:
+            # Get token using proper service account authentication
+            credentials, project = self._get_credentials()
+            
             r = requests.post(
                 self.id_service_url, 
                 json={"domain":domain,"source_system":src_sys,"source_id":src_id}, 
                 timeout=10,
-                headers={'Authorization': f'Bearer {self._get_token()}'}  
-# Added auth
+                headers={'Authorization': f'Bearer {credentials.token}'}
             )
             r.raise_for_status()
             return r.json()["pk"]
@@ -82,14 +84,15 @@ class ResolvePK(beam.DoFn):
             logging.error(f"ID service call failed: {e}")
             raise
     
-    def _get_token(self):
+    def _get_credentials(self):
         # FIXED: Get proper service account token for authentication
         from google.auth import default
         from google.auth.transport.requests import Request
         
-        credentials, _ = default()
-        credentials.refresh(Request())
-        return credentials.token
+        credentials, project = default()
+        if not credentials.valid:
+            credentials.refresh(Request())
+        return credentials, project
     
     def process(self, row):
         d = row["domain"]
@@ -139,7 +142,7 @@ class UpsertAlloyDB(beam.DoFn):
         
     def setup(self):
         try:
-            # Used connection pooling
+            # Use connection pooling
             self.pool = psycopg2.pool.ThreadedConnectionPool(
                 1, 5,  # min and max connections
                 **self.cfg
@@ -240,8 +243,6 @@ class UpsertAlloyDB(beam.DoFn):
         if self.pool:
             self.pool.closeall()
 
-# Rest of the run() function but added some improved error handling, might 
-# need to add more.
 def run():
     import argparse
     parser = argparse.ArgumentParser()
@@ -264,11 +265,45 @@ def run():
     parser.add_argument("--adb_user", required=True)
     parser.add_argument("--adb_password", required=True)
     parser.add_argument("--adb_db", default="supplychain")
+    
+    # Additional Dataflow-specific arguments
+    parser.add_argument("--job_name", help="Dataflow job name")
+    parser.add_argument("--service_account_email", help="Service account email")
+    parser.add_argument("--subnetwork", help="Subnetwork for workers")
+    parser.add_argument("--use_public_ips", default="false", help="Use public IPs")
+    parser.add_argument("--max_num_workers", default="10", help="Max number of workers")
+    parser.add_argument("--machine_type", default="n1-standard-2", help="Worker machine type")
+    
     args, beam_args = parser.parse_known_args()
 
-    opts = PipelineOptions(beam_args, streaming=True, save_main_session=True)
-    opts.view_as(SetupOptions).save_main_session=True
-    opts.view_as(StandardOptions).streaming=True
+    # FIXED: Proper pipeline options configuration
+    pipeline_options = PipelineOptions(beam_args)
+    
+    # Set streaming and setup options
+    pipeline_options.view_as(StandardOptions).streaming = True
+    pipeline_options.view_as(SetupOptions).save_main_session = True
+    
+    # Set Google Cloud options
+    google_cloud_options = pipeline_options.view_as(GoogleCloudOptions)
+    google_cloud_options.project = args.project
+    google_cloud_options.region = args.region
+    google_cloud_options.temp_location = args.gcs_temp
+    google_cloud_options.staging_location = f"{args.gcs_temp}/staging"
+    
+    # Set job name if provided
+    if args.job_name:
+        google_cloud_options.job_name = args.job_name
+    
+    # Set service account if provided
+    if args.service_account_email:
+        google_cloud_options.service_account_email = args.service_account_email
+    
+    # Set networking options if provided
+    if args.subnetwork:
+        google_cloud_options.subnetwork = args.subnetwork
+    
+    if args.use_public_ips.lower() == "false":
+        google_cloud_options.use_public_ips = False
 
     def domain_branch(pcoll, domain, bronze_table, dlq_table):
         parsed = pcoll | f"{domain}:ParseDQ" >> beam.ParDo(ParseDQ(domain)).with_outputs("dlq", main="ok")
@@ -278,9 +313,15 @@ def run():
         good, bad = resolved.ok, resolved.dlq
 
         _ = good | f"{domain}:WriteBronze" >> WriteToBigQuery(
-            table=bronze_table, custom_gcs_temp_location=args.gcs_temp,
+            table=bronze_table, 
+            custom_gcs_temp_location=args.gcs_temp,
             write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
-            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
+            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
+            # FIXED: Add schema auto-detection and error handling
+            schema='SCHEMA_AUTODETECT',
+            additional_bq_parameters={
+                'timePartitioning': {'type': 'DAY', 'field': 'ingest_ts'}
+            }
         )
 
         _ = good | f"{domain}:UpsertAlloyDB" >> beam.ParDo(
@@ -289,15 +330,18 @@ def run():
 
         dlq_all = ((dlq, bad) | f"{domain}:FlattenDLQ" >> beam.Flatten())
         _ = dlq_all | f"{domain}:WriteDLQ" >> WriteToBigQuery(
-            table=dlq_table, custom_gcs_temp_location=args.gcs_temp,
+            table=dlq_table, 
+            custom_gcs_temp_location=args.gcs_temp,
             write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
-            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
+            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
+            schema='SCHEMA_AUTODETECT'
         )
 
-    with beam.Pipeline(options=opts) as p:
-        sup = p | "ReadSupplier" >> ReadFromPubSub(subscription=args.supplier_sub)
-        mat = p | "ReadMaterial" >> ReadFromPubSub(subscription=args.material_sub)
-        pla = p | "ReadPlant"    >> ReadFromPubSub(subscription=args.plant_sub)
+    with beam.Pipeline(options=pipeline_options) as p:
+        # FIXED: Use proper subscription format
+        sup = p | "ReadSupplier" >> ReadFromPubSub(subscription=f"projects/{args.project}/subscriptions/{args.supplier_sub}")
+        mat = p | "ReadMaterial" >> ReadFromPubSub(subscription=f"projects/{args.project}/subscriptions/{args.material_sub}")
+        pla = p | "ReadPlant"    >> ReadFromPubSub(subscription=f"projects/{args.project}/subscriptions/{args.plant_sub}")
 
         domain_branch(sup, "supplier", args.bq_supplier_bronze, args.bq_supplier_dlq)
         domain_branch(mat, "material", args.bq_material_bronze, args.bq_material_dlq)
