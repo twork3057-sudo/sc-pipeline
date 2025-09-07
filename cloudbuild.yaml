@@ -1,37 +1,43 @@
+# cloudbuild.yaml  (for sc-pipeline)
 options:
   logging: CLOUD_LOGGING_ONLY
 
 substitutions:
   _REGION: us-central1
-  _REPO: services
-  _IMAGE: us-central1-docker.pkg.dev/$PROJECT_ID/$_REPO/sc-pipeline:latest
+  _REPO: services                     # Artifact Registry repo name (lowercase)
   _TEMPLATE_PATH: gs://$PROJECT_ID-dataflow/templates/sc-pipeline.json
 
 steps:
-# Ensure the template bucket exists (no-op if already exists)
+# 0) Ensure the Dataflow bucket exists (idempotent)
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk
   entrypoint: bash
   args:
-    - -c
+    - -lc
     - |
-      gcloud storage buckets create gs://$PROJECT_ID-dataflow --location=${_REGION} || true
-      gcloud storage buckets create gs://$PROJECT_ID-dataflow/tmp --location=${_REGION} || true
+      gsutil ls gs://$PROJECT_ID-dataflow || gsutil mb -l $_REGION gs://$PROJECT_ID-dataflow
 
-# Build & push the pipeline image
+# 1) Build the image (note: no nested substitutions)
 - name: gcr.io/cloud-builders/docker
-  args: ['build','-t','$_IMAGE','.']
+  args:
+    [
+      "build",
+      "-t","us-central1-docker.pkg.dev/$PROJECT_ID/$_REPO/sc-pipeline:latest",
+      "."
+    ]
 
+# 2) Push the image
 - name: gcr.io/cloud-builders/docker
-  args: ['push','$_IMAGE']
+  args: ["push","us-central1-docker.pkg.dev/$PROJECT_ID/$_REPO/sc-pipeline:latest"]
 
-# Build the Flex Template spec JSON in GCS
+# 3) Build the Flex Template JSON into GCS
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk
   entrypoint: gcloud
   args:
     [
-      'dataflow','flex-template','build','$_TEMPLATE_PATH',
-      '--image','$_IMAGE',
-      '--sdk-language','PYTHON',
-      '--metadata-file','metadata.json'
+      "dataflow","flex-template","build","$_TEMPLATE_PATH",
+      "--image","us-central1-docker.pkg.dev/$PROJECT_ID/$_REPO/sc-pipeline:latest",
+      "--sdk-language","PYTHON",
+      "--metadata-file","metadata.json"
     ]
+
 
