@@ -1,7 +1,8 @@
 # cloudbuild.yaml for sc-pipeline
 options:
   logging: CLOUD_LOGGING_ONLY
-
+  substitution_option: ALLOW_LOOSE
+  
 substitutions:
   _REGION: us-central1
   _REPO: services           
@@ -9,27 +10,60 @@ substitutions:
 
 steps:
 # 0) Make sure the Dataflow bucket exists
-- name: gcr.io/google.com/cloudsdktool/cloud-sdk
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
-  args: ['-lc', 'gsutil ls gs://${_BUCKET} || gsutil mb -l ${_REGION} gs://${_BUCKET}']
+  args: 
+    - '-c'
+    - |
+      echo "Checking if bucket gs://${_BUCKET} exists..."
+      if ! gsutil ls gs://${_BUCKET} >/dev/null 2>&1; then
+        echo "Creating bucket gs://${_BUCKET}..."
+        gsutil mb -l ${_REGION} gs://${_BUCKET}
+      else
+        echo "Bucket already exists"
+      fi
 
 # 1) Build image
-- name: gcr.io/cloud-builders/docker
+- name: gcr.io/cloud-builders/docker:latest
   args:
-    ['build',
-     '-t','us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest',
-     '.']
+    - 'build'
+    - '-t'
+    - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest'
+    - '-t'
+    - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:${SHORT_SHA}'
+    - '.'
 
 # 2) Push image
-- name: gcr.io/cloud-builders/docker
+- name: gcr.io/cloud-builders/docker:latest
   args:
-    ['push','us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest']
+    - 'push'
+    - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest'
+
+- name: gcr.io/cloud-builders/docker:latest
+  args:
+    - 'push'
+    - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:${SHORT_SHA}'
 
 # 3) Build the Dataflow Flex Template spec in GCS
-- name: gcr.io/google.com/cloudsdktool/cloud-sdk
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+  entrypoint: bash
   args:
-    ['dataflow','flex-template','build','gs://${_BUCKET}/templates/sc-pipeline.json',
-     '--image','us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest',
-     '--sdk-language','PYTHON',
-     '--metadata-file','metadata.json']
+    - '-c'
+    - |
+      echo "Building Dataflow Flex Template..."
+      gcloud dataflow flex-template build gs://${_BUCKET}/templates/sc-pipeline.json \
+        --image=us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest \
+        --sdk-language=PYTHON \
+        --metadata-file=metadata.json \
+        --project=${PROJECT_ID}
 
+# Optional: Test template creation
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+  entrypoint: bash
+  args:
+    - '-c'
+    - |
+      echo "Verifying template was created..."
+      gsutil ls -la gs://${_BUCKET}/templates/sc-pipeline.json
+
+timeout: 1200s
