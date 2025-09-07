@@ -1,33 +1,25 @@
 {
   "name": "sc-pipeline",
-  "description": "Supplier/Material/Plant streaming pipeline",
+  "description": "Supplier/Material/Plant streaming to Bronze + AlloyDB upserts",
   "parameters": [
-    {"name":"project","label":"Project","helpText":"GCP project id","paramType":"TEXT","isOptional":false},
-    {"name":"region","label":"Region","paramType":"TEXT","isOptional":false},
-
-    {"name":"supplier_sub","label":"Supplier subscription","paramType":"TEXT","isOptional":false},
-    {"name":"material_sub","label":"Material subscription","paramType":"TEXT","isOptional":false},
-    {"name":"plant_sub","label":"Plant subscription","paramType":"TEXT","isOptional":false},
-
-    {"name":"bq_supplier_bronze","label":"BQ supplier bronze","paramType":"TEXT","isOptional":false},
-    {"name":"bq_material_bronze","label":"BQ material bronze","paramType":"TEXT","isOptional":false},
-    {"name":"bq_plant_bronze","label":"BQ plant bronze","paramType":"TEXT","isOptional":false},
-
-    {"name":"bq_supplier_dlq","label":"BQ supplier DLQ","paramType":"TEXT","isOptional":false},
-    {"name":"bq_material_dlq","label":"BQ material DLQ","paramType":"TEXT","isOptional":false},
-    {"name":"bq_plant_dlq","label":"BQ plant DLQ","paramType":"TEXT","isOptional":false},
-
-    {"name":"redis_host","label":"Redis host","paramType":"TEXT","isOptional":false},
-    {"name":"id_service_url","label":"ID service URL (/id)","paramType":"TEXT","isOptional":false},
-
-    {"name":"adb_host","label":"AlloyDB host","paramType":"TEXT","isOptional":false},
-    {"name":"adb_port","label":"AlloyDB port","paramType":"TEXT","isOptional":true,"defaultValue":"5432"},
-    {"name":"adb_user","label":"AlloyDB user","paramType":"TEXT","isOptional":false},
-    {"name":"adb_password","label":"AlloyDB password","paramType":"PASSWORD","isOptional":false},
-    {"name":"adb_db","label":"AlloyDB db","paramType":"TEXT","isOptional":true,"defaultValue":"supplychain"},
-
-    {"name":"gcs_temp","label":"GCS temp for BQ","paramType":"TEXT","isOptional":false},
-    {"name":"max_num_workers","label":"Max workers","paramType":"TEXT","isOptional":true,"defaultValue":"3"},
-    {"name":"service_account_email","label":"Worker service account","paramType":"TEXT","isOptional":false}
+    {"name":"project","label":"Project","helpText":"GCP project","isOptional":false},
+    {"name":"region","label":"Region","isOptional":false,"default":"us-central1"},
+    {"name":"supplier_sub","label":"Supplier subscription","isOptional":false},
+    {"name":"material_sub","label":"Material subscription","isOptional":false},
+    {"name":"plant_sub","label":"Plant subscription","isOptional":false},
+    {"name":"redis_host","label":"Redis host","isOptional":false},
+    {"name":"id_service_url","label":"ID service URL (/id)","isOptional":false},
+    {"name":"bq_supplier_bronze","label":"BQ supplier bronze","isOptional":false},
+    {"name":"bq_material_bronze","label":"BQ material bronze","isOptional":false},
+    {"name":"bq_plant_bronze","label":"BQ plant bronze","isOptional":false},
+    {"name":"bq_supplier_dlq","label":"BQ supplier DLQ","isOptional":false},
+    {"name":"bq_material_dlq","label":"BQ material DLQ","isOptional":false},
+    {"name":"bq_plant_dlq","label":"BQ plant DLQ","isOptional":false},
+    {"name":"gcs_temp","label":"BQ temp GCS path","isOptional":false},
+    {"name":"adb_host","label":"AlloyDB host","isOptional":false},
+    {"name":"adb_port","label":"AlloyDB port","isOptional":true,"default":"5432"},
+    {"name":"adb_user","label":"AlloyDB user","isOptional":false},
+    {"name":"adb_password","label":"AlloyDB password (Secret ok)","isOptional":false},
+    {"name":"adb_db","label":"AlloyDB database","isOptional":true,"default":"supplychain"}
   ]
 }
