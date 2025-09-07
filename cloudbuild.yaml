@@ -1,4 +1,4 @@
-# cloudbuild.yaml for sc-pipeline - hardcoded values
+# cloudbuild.yaml for sc-pipeline - SIMPLE VERSION
 options:
   logging: CLOUD_LOGGING_ONLY
   substitution_option: ALLOW_LOOSE
@@ -7,8 +7,6 @@ substitutions:
   _REGION: us-central1
   _REPO: services           
   _BUCKET: ${PROJECT_ID}-dataflow
-  _SERVICE_ACCOUNT: df-domains@${PROJECT_ID}.iam.gserviceaccount.com
-  _SUBNETWORK: regions/us-central1/subnetworks/default
   
 steps:
 # 0) Make sure the Dataflow bucket exists
@@ -67,7 +65,7 @@ steps:
       echo "Verifying template was created..."
       gsutil ls -la gs://${_BUCKET}/templates/sc-pipeline.json
 
-# 5) Run the pipeline with hardcoded resource values
+# 5) Run the pipeline - HARDCODED VALUES
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
@@ -75,23 +73,16 @@ steps:
     - |
       echo "Starting Dataflow pipeline..."
       
-      # Generate unique job name with timestamp
-      JOB_NAME="sc-pipeline-$(date +%Y%m%d-%H%M%S)"
-      echo "Starting job: $JOB_NAME"
-      
-      # Run the Dataflow pipeline with hardcoded values
-      gcloud dataflow flex-template run "$JOB_NAME" \
-        --region=${_REGION} \
+      gcloud dataflow flex-template run sc-pipeline-20250107-001 \
+        --region=us-central1 \
         --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \
-        --service-account-email=${_SERVICE_ACCOUNT} \
+        --service-account-email=df-domains@${PROJECT_ID}.iam.gserviceaccount.com \
         --network=default \
-        --subnetwork=${_SUBNETWORK} \
+        --subnetwork=regions/us-central1/subnetworks/default \
         --disable-public-ips \
         --max-workers=10 \
-        --parameters="project=${PROJECT_ID},region=${_REGION},supplier_sub=projects/${PROJECT_ID}/subscriptions/supplier.sub,material_sub=projects/${PROJECT_ID}/subscriptions/material.sub,plant_sub=projects/${PROJECT_ID}/subscriptions/plant.sub,redis_host=REPLACE_WITH_ACTUAL_REDIS_HOST,id_service_url=REPLACE_WITH_ACTUAL_ID_SERVICE_URL/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=REPLACE_WITH_ACTUAL_ADB_HOST,adb_port=5432,adb_user=postgres,adb_password=Str0ngP@ss!,adb_db=supplychain"
+        --parameters="project=${PROJECT_ID},region=us-central1,supplier_sub=projects/${PROJECT_ID}/subscriptions/supplier.sub,material_sub=projects/${PROJECT_ID}/subscriptions/material.sub,plant_sub=projects/${PROJECT_ID}/subscriptions/plant.sub,redis_host=REDIS_HOST_HERE,id_service_url=ID_SERVICE_URL_HERE/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=ADB_HOST_HERE,adb_port=5432,adb_user=postgres,adb_password=Str0ngP@ss!,adb_db=supplychain"
       
       echo "Pipeline started successfully!"
-      echo "Job name: $JOB_NAME"
-      echo "Monitor at: https://console.cloud.google.com/dataflow/jobs/${_REGION}/$JOB_NAME?project=${PROJECT_ID}"
 
 timeout: 1800s
