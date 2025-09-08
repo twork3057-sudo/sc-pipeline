@@ -1,4 +1,3 @@
-# Minimal test cloudbuild.yaml - tests basic Dataflow functionality
 options:
   logging: CLOUD_LOGGING_ONLY
   
@@ -6,137 +5,112 @@ substitutions:
   _REGION: us-central1
   _REPO: services           
   _BUCKET: ${PROJECT_ID}-dataflow
+  _SERVICE_ACCOUNT: df-domains@${PROJECT_ID}.iam.gserviceaccount.com
   
 steps:
-# Create a simple test main.py that just reads and writes
+# Enable required APIs
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
     - '-c'
     - |
-      cat > test_main.py << 'EOF'
-      import apache_beam as beam
-      from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions
-      from apache_beam.io.gcp.bigquery import WriteToBigQuery
-      import json
-      import logging
-      from datetime import datetime, timezone
-
-      def parse_element(element):
-          try:
-              data = json.loads(element.decode('utf-8'))
-              data['processed_at'] = datetime.now(timezone.utc).isoformat()
-              return data
-          except:
-              return {"error": "parse_failed", "raw_data": str(element)}
-
-      def run():
-          import argparse
-          parser = argparse.ArgumentParser()
-          parser.add_argument("--output_table", required=True)
-          parser.add_argument("--temp_location", required=True)
-          args, beam_args = parser.parse_known_args()
-          
-          pipeline_options = PipelineOptions(beam_args)
-          pipeline_options.view_as(StandardOptions).streaming = False
-          
-          with beam.Pipeline(options=pipeline_options) as p:
-              result = (p 
-                       | "Create" >> beam.Create([
-                           '{"test": "data1", "id": 1}',
-                           '{"test": "data2", "id": 2}'
-                       ])
-                       | "Parse" >> beam.Map(parse_element)
-                       | "Write" >> WriteToBigQuery(
-                           table=args.output_table,
-                           custom_gcs_temp_location=args.temp_location,
-                           write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
-                           create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
-                       ))
-
-      if __name__ == "__main__":
-          logging.getLogger().setLevel(logging.INFO)
-          run()
-      EOF
-
-# Create simple requirements.txt
+      gcloud services enable dataflow.googleapis.com
+      gcloud services enable artifactregistry.googleapis.com
+      
+# Create bucket if it doesn't exist
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
     - '-c'
     - |
-      cat > test_requirements.txt << 'EOF'
-      apache-beam[gcp]==2.53.0
-      EOF
-
-# Create simple Dockerfile
+      gsutil ls gs://${_BUCKET} || gsutil mb -l ${_REGION} gs://${_BUCKET}
+      
+# Create Artifact Registry repo if it doesn't exist
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
     - '-c'
     - |
-      cat > test_Dockerfile << 'EOF'
-      FROM gcr.io/dataflow-templates-base/python311-template-launcher-base
-      ENV FLEX_TEMPLATE_PYTHON_PY_FILE="test_main.py"
-      ENV FLEX_TEMPLATE_PYTHON_REQUIREMENTS_FILE="test_requirements.txt"
-      COPY test_requirements.txt /tmp/requirements.txt
-      RUN pip install -r /tmp/requirements.txt
-      COPY test_main.py /template/
-      WORKDIR /template
-      EOF
+      gcloud artifacts repositories describe ${_REPO} --location=${_REGION} || \
+      gcloud artifacts repositories create ${_REPO} --repository-format=docker --location=${_REGION}
 
-# Build test image
+# Build the Dataflow Flex Template image
 - name: gcr.io/cloud-builders/docker:latest
   args:
     - 'build'
     - '-f'
-    - 'test_Dockerfile'
+    - 'Dockerfile'
     - '-t'
-    - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/test-pipeline:latest'
+    - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/supply-chain-pipeline:latest'
     - '.'
-
-# Push test image
+  
+# Push the image
 - name: gcr.io/cloud-builders/docker:latest
   args:
     - 'push'
-    - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/test-pipeline:latest'
+    - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/supply-chain-pipeline:latest'
 
-# Build test template
+# Build the Flex Template
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
     - '-c'
     - |
-      cat > test_metadata.json << 'EOF'
-      {
-        "name": "Test Pipeline",
-        "description": "Simple test pipeline"
-      }
-      EOF
-      
-      gcloud dataflow flex-template build gs://${_BUCKET}/templates/test-pipeline.json \
-        --image=us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/test-pipeline:latest \
+      gcloud dataflow flex-template build gs://${_BUCKET}/templates/supply-chain-pipeline.json \
+        --image="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/supply-chain-pipeline:latest" \
         --sdk-language=PYTHON \
-        --metadata-file=test_metadata.json
+        --metadata-file=metadata.json
 
-# Run test pipeline
+# Test the pipeline with a simple job
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
     - '-c'
     - |
-      JOB_NAME="test-pipeline-$(date +%Y%m%d-%H%M%S)"
+      # Get Redis host (assuming it's already created)
+      REDIS_HOST=$(gcloud redis instances describe sc-idcache --region=${_REGION} --format='value(host)' 2>/dev/null || echo "10.0.0.1")
       
-      echo "Running test pipeline: $$JOB_NAME"
+      # Get AlloyDB host (assuming it's already created) 
+      ADB_HOST=$(gcloud alloydb instances describe sc-primary --cluster=sc-cluster --region=${_REGION} --format='value(ipAddress)' 2>/dev/null || echo "10.0.0.2")
       
-      gcloud dataflow flex-template run $$JOB_NAME \
+      # Create a test job name with timestamp
+      JOB_NAME="supply-chain-test-$(date +%Y%m%d-%H%M%S)"
+      
+      echo "Launching Dataflow job: $${JOB_NAME}"
+      
+      # Launch the Dataflow job
+      gcloud dataflow flex-template run $${JOB_NAME} \
+        --template-file-gcs-location=gs://${_BUCKET}/templates/supply-chain-pipeline.json \
         --region=${_REGION} \
-        --template-file-gcs-location=gs://${_BUCKET}/templates/test-pipeline.json \
-        --parameters="output_table=${PROJECT_ID}:domain_bronze.test_output,temp_location=gs://${_BUCKET}/temp"
+        --service-account-email=${_SERVICE_ACCOUNT} \
+        --parameters="project=${PROJECT_ID}" \
+        --parameters="region=${_REGION}" \
+        --parameters="supplier_sub=supplier.sub" \
+        --parameters="material_sub=material.sub" \
+        --parameters="plant_sub=plant.sub" \
+        --parameters="redis_host=$${REDIS_HOST}" \
+        --parameters="id_service_url=https://id-service-dummy.com/id" \
+        --parameters="bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze" \
+        --parameters="bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze" \
+        --parameters="bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze" \
+        --parameters="bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq" \
+        --parameters="bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq" \
+        --parameters="bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq" \
+        --parameters="gcs_temp=gs://${_BUCKET}/temp" \
+        --parameters="adb_host=$${ADB_HOST}" \
+        --parameters="adb_port=5432" \
+        --parameters="adb_user=postgres" \
+        --parameters="adb_password=Str0ngP@ss!" \
+        --parameters="adb_db=supplychain" \
+        --parameters="job_name=$${JOB_NAME}" \
+        --parameters="service_account_email=${_SERVICE_ACCOUNT}" \
+        --max-workers=3 \
+        --num-workers=1
       
-      echo "Test job submitted: $$JOB_NAME"
+      echo "Job submitted successfully: $${JOB_NAME}"
+      
+      # Wait a bit and check job status
       sleep 30
-      
-      gcloud dataflow jobs list --region=${_REGION} --format="table(name,state,createTime)" | head -3
+      gcloud dataflow jobs list --region=${_REGION} --limit=5 --format="table(name,state,createTime)"
 
-timeout: 1200s
+timeout: 1800s
