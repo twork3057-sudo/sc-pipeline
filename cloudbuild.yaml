@@ -1,4 +1,4 @@
-# cloudbuild.yaml - BUILD TEMPLATE ONLY (no job execution)
+# cloudbuild.yaml - BUILD AND RUN WITH ERROR CAPTURE
 options:
   logging: CLOUD_LOGGING_ONLY
   substitution_option: ALLOW_LOOSE
@@ -7,6 +7,10 @@ substitutions:
   _REGION: us-central1
   _REPO: services           
   _BUCKET: ${PROJECT_ID}-dataflow
+  # YOUR ACTUAL SERVICE VALUES:
+  _REDIS_HOST: "10.185.247.59"
+  _ID_SERVICE_URL: "https://id-service-1051481682783.us-central1.run.app"
+  _ADB_HOST: "10.100.129.2"
   
 steps:
 # 0) Make sure the Dataflow bucket exists
@@ -23,21 +27,18 @@ steps:
         echo "Bucket already exists"
       fi
 
-# 1) Create Artifact Registry repo if it doesn't exist
+# 1) Create Artifact Registry repo if needed
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
     - '-c'
     - |
-      echo "Checking if Artifact Registry repo exists..."
       if ! gcloud artifacts repositories describe ${_REPO} --location=${_REGION} >/dev/null 2>&1; then
         echo "Creating Artifact Registry repository..."
         gcloud artifacts repositories create ${_REPO} --repository-format=docker --location=${_REGION}
-      else
-        echo "Repository already exists"
       fi
 
-# 2) Build image
+# 2) Build image with better error handling
 - name: gcr.io/cloud-builders/docker:latest
   args:
     - 'build'
@@ -45,6 +46,8 @@ steps:
     - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest'
     - '-t'
     - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:${SHORT_SHA}'
+    - '--build-arg'
+    - 'PROJECT_ID=${PROJECT_ID}'
     - '.'
 
 # 3) Push image
@@ -52,12 +55,8 @@ steps:
   args:
     - 'push'
     - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest'
-- name: gcr.io/cloud-builders/docker:latest
-  args:
-    - 'push'
-    - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:${SHORT_SHA}'
 
-# 4) Build the Dataflow Flex Template spec in GCS
+# 4) Build template
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
@@ -70,25 +69,76 @@ steps:
         --metadata-file=metadata.json \
         --project=${PROJECT_ID}
 
-# 5) Verify template creation
+# 5) RUN PIPELINE WITH DEBUG OUTPUT
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
     - '-c'
     - |
-      echo "Verifying template was created..."
-      gsutil ls -la gs://${_BUCKET}/templates/sc-pipeline.json
+      echo "=== STARTING DATAFLOW PIPELINE WITH DEBUG ==="
+      
+      JOB_NAME="sc-pipeline-debug-$(date +%Y%m%d-%H%M%S)"
+      export ADB_PASSWORD='Str0ngP@ss!'
+      
+      echo "Job Name: $$JOB_NAME"
+      echo "Template: gs://${_BUCKET}/templates/sc-pipeline.json"
+      echo "Redis: ${_REDIS_HOST}"
+      echo "ID Service: ${_ID_SERVICE_URL}"
+      echo "AlloyDB: ${_ADB_HOST}"
+      
+      # Submit job
+      gcloud dataflow flex-template run $$JOB_NAME \
+        --region=${_REGION} \
+        --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \
+        --service-account-email=df-domains@${PROJECT_ID}.iam.gserviceaccount.com \
+        --network=projects/${PROJECT_ID}/global/networks/default \
+        --subnetwork=projects/${PROJECT_ID}/regions/${_REGION}/subnetworks/default \
+        --max-workers=3 \
+        --worker-machine-type=n1-standard-2 \
+        --use-public-ips \
+        --parameters="project=${PROJECT_ID},region=${_REGION},supplier_sub=supplier.sub,material_sub=material.sub,plant_sub=plant.sub,redis_host=${_REDIS_HOST},id_service_url=${_ID_SERVICE_URL}/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=${_ADB_HOST},adb_port=5432,adb_user=postgres,adb_password=$${ADB_PASSWORD},adb_db=supplychain"
+      
+      echo "Pipeline $$JOB_NAME submitted!"
       echo ""
-      echo "=== TEMPLATE BUILD COMPLETE ==="
-      echo "Template location: gs://${_BUCKET}/templates/sc-pipeline.json"
-      echo "Docker image: us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest"
+      
+      # Wait and get job details
+      echo "Waiting 30 seconds for job to initialize..."
+      sleep 30
+      
+      echo "=== JOB STATUS ==="
+      gcloud dataflow jobs list --region=${_REGION} --format="table(name,state,createTime)" | head -5
+      
+      # Get the job ID
+      JOB_ID=$$(gcloud dataflow jobs list --region=${_REGION} --filter="name:$$JOB_NAME" --format="value(id)" | head -1)
+      
+      if [ ! -z "$$JOB_ID" ]; then
+        echo ""
+        echo "=== JOB DETAILS FOR $$JOB_ID ==="
+        gcloud dataflow jobs describe $$JOB_ID --region=${_REGION} --format="yaml(currentState,currentStateTime,type,createTime,startTime)"
+        
+        echo ""
+        echo "=== CHECKING FOR WORKER LOGS ==="
+        # Wait a bit more and check logs
+        sleep 30
+        gcloud logging read "resource.type=dataflow_job AND resource.labels.job_id=$$JOB_ID" --limit=10 --format=json --freshness=1m || echo "No job logs yet"
+        
+        echo ""
+        echo "=== CHECKING FOR WORKER VM LOGS ==="
+        gcloud logging read "resource.type=gce_instance AND jsonPayload.job_id=$$JOB_ID" --limit=10 --format=json --freshness=2m || echo "No worker logs yet"
+        
+        echo ""
+        echo "=== CHECKING GENERAL DATAFLOW LOGS ==="
+        gcloud logging read "resource.type=dataflow_job AND resource.labels.job_id=$$JOB_ID AND severity>=ERROR" --limit=5 --format=json || echo "No error logs found"
+        
+      else
+        echo "ERROR: Could not find job ID for $$JOB_NAME"
+        echo "All jobs:"
+        gcloud dataflow jobs list --region=${_REGION}
+      fi
+      
       echo ""
-      echo "To run the pipeline manually, use:"
-      echo "gcloud dataflow flex-template run JOB_NAME \\"
-      echo "  --region=${_REGION} \\"
-      echo "  --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \\"
-      echo "  --parameters=\"project=${PROJECT_ID},region=${_REGION},...\""
+      echo "=== DEBUG COMPLETE ==="
+      echo "Job Name: $$JOB_NAME"
+      echo "Check Dataflow Console: https://console.cloud.google.com/dataflow/jobs?project=${PROJECT_ID}"
 
-# NO JOB EXECUTION STEP - will run this manually from Cloud Shell
-
-timeout: 1800s
+timeout: 2400s
