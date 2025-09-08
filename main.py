@@ -270,7 +270,7 @@ def run():
     parser.add_argument("--job_name", help="Dataflow job name")
     parser.add_argument("--service_account_email", help="Service account email")
     parser.add_argument("--subnetwork", help="Subnetwork for workers")
-    parser.add_argument("--use_public_ips", default="false", help="Use public IPs")
+    parser.add_argument("--use_public_ips", default="true", help="Use public IPs")
     parser.add_argument("--max_num_workers", default="10", help="Max number of workers")
     parser.add_argument("--machine_type", default="n1-standard-2", help="Worker machine type")
     
