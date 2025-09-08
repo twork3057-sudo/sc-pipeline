@@ -10,7 +10,7 @@ substitutions:
   # YOUR ACTUAL SERVICE VALUES:
   _REDIS_HOST: "10.185.247.59"  # Your Redis HOST IP
   _ID_SERVICE_URL: "https://id-service-1051481682783.us-central1.run.app"  # Your Cloud Run service URL
-  _ADB_HOST: "10.185.247.59"  # Using Redis IP for now - you need AlloyDB private IP
+  _ADB_HOST: "10.100.129.2"  # AlloyDB private IP
   
 steps:
 # 0) Make sure the Dataflow bucket exists
