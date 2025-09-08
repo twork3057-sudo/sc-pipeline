@@ -85,7 +85,7 @@ class ResolvePK(beam.DoFn):
             raise
     
     def _get_credentials(self):
-        # FIXED: Get proper service account token for authentication
+        # Get proper service account token for authentication
         from google.auth import default
         from google.auth.transport.requests import Request
         
@@ -276,7 +276,7 @@ def run():
     
     args, beam_args = parser.parse_known_args()
 
-    # FIXED: Proper pipeline options configuration
+    # Proper pipeline options configuration
     pipeline_options = PipelineOptions(beam_args)
     
     # Set streaming and setup options
@@ -339,9 +339,9 @@ def run():
 
     with beam.Pipeline(options=pipeline_options) as p:
         # FIXED: Use proper subscription format
-        sup = p | "ReadSupplier" >> ReadFromPubSub(subscription=f"projects/{args.project}/subscriptions/{args.supplier_sub}")
-        mat = p | "ReadMaterial" >> ReadFromPubSub(subscription=f"projects/{args.project}/subscriptions/{args.material_sub}")
-        pla = p | "ReadPlant"    >> ReadFromPubSub(subscription=f"projects/{args.project}/subscriptions/{args.plant_sub}")
+        sup = p | "ReadSupplier" >> ReadFromPubSub(subscription=args.supplier_sub)
+        mat = p | "ReadMaterial" >> ReadFromPubSub(subscription=args.material_sub)
+        pla = p | "ReadPlant"    >> ReadFromPubSub(subscription=args.plant_sub)
 
         domain_branch(sup, "supplier", args.bq_supplier_bronze, args.bq_supplier_dlq)
         domain_branch(mat, "material", args.bq_material_bronze, args.bq_material_dlq)
