@@ -84,9 +84,9 @@ steps:
         --region=${_REGION} \
         --parameters="project=${PROJECT_ID}" \
         --parameters="region=${_REGION}" \
-        --parameters="supplier_sub=supplier.sub" \
-        --parameters="material_sub=material.sub" \
-        --parameters="plant_sub=plant.sub" \
+        --parameters="supplier_sub=projects/${PROJECT_ID}/subscriptions/supplier-sub" \
+        --parameters="material_sub=projects/${PROJECT_ID}/subscriptions/material-sub" \
+        --parameters="plant_sub=projects/${PROJECT_ID}/subscriptions/plant-sub" \
         --parameters="redis_host=$${REDIS_HOST}" \
         --parameters="id_service_url=https://id-service-dummy.com/id" \
         --parameters="bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze" \
