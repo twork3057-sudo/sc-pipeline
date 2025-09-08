@@ -1,8 +1,9 @@
-FROM python:3.11-slim
+# Use the official Dataflow base image
+FROM gcr.io/dataflow-templates-base/python311-template-launcher-base
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Set environment variables for Dataflow
+ENV FLEX_TEMPLATE_PYTHON_PY_FILE="main.py"
+ENV FLEX_TEMPLATE_PYTHON_REQUIREMENTS_FILE="requirements.txt"
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -10,21 +11,15 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /app
-
-# Copy and install Python dependencies
-COPY requirements.txt .
+# Copy requirements and install Python dependencies
+COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy application code
-COPY main.py .
+# Copy all source files to the template directory
+COPY . /template/
 
-# Create a non-root user for security
-RUN useradd --create-home --shell /bin/bash app && \
-    chown -R app:app /app
-USER app
+# Set working directory
+WORKDIR /template
 
-# Dataflow will call: python main.py ...
-ENTRYPOINT ["python", "main.py"]
+# The base image handles the entrypoint
