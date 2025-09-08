@@ -1,4 +1,4 @@
-# cloudbuild.yaml for sc-pipeline - FIXED WITH REAL VALUES
+# cloudbuild.yaml - BUILD TEMPLATE ONLY (no job execution)
 options:
   logging: CLOUD_LOGGING_ONLY
   substitution_option: ALLOW_LOOSE
@@ -6,11 +6,7 @@ options:
 substitutions:
   _REGION: us-central1
   _REPO: services           
-  _BUCKET: ${PROJECT_ID}-dataflow  # FIXED: was *BUCKET
-  # YOUR ACTUAL SERVICE VALUES:
-  _REDIS_HOST: "10.185.247.59"  # Your Redis HOST IP
-  _ID_SERVICE_URL: "https://id-service-1051481682783.us-central1.run.app"  # Your Cloud Run service URL
-  _ADB_HOST: "10.100.129.2"  # AlloyDB private IP
+  _BUCKET: ${PROJECT_ID}-dataflow
   
 steps:
 # 0) Make sure the Dataflow bucket exists
@@ -27,7 +23,21 @@ steps:
         echo "Bucket already exists"
       fi
 
-# 1) Build image
+# 1) Create Artifact Registry repo if it doesn't exist
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+  entrypoint: bash
+  args:
+    - '-c'
+    - |
+      echo "Checking if Artifact Registry repo exists..."
+      if ! gcloud artifacts repositories describe ${_REPO} --location=${_REGION} >/dev/null 2>&1; then
+        echo "Creating Artifact Registry repository..."
+        gcloud artifacts repositories create ${_REPO} --repository-format=docker --location=${_REGION}
+      else
+        echo "Repository already exists"
+      fi
+
+# 2) Build image
 - name: gcr.io/cloud-builders/docker:latest
   args:
     - 'build'
@@ -37,7 +47,7 @@ steps:
     - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:${SHORT_SHA}'
     - '.'
 
-# 2) Push image
+# 3) Push image
 - name: gcr.io/cloud-builders/docker:latest
   args:
     - 'push'
@@ -47,7 +57,7 @@ steps:
     - 'push'
     - 'us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:${SHORT_SHA}'
 
-# 3) Build the Dataflow Flex Template spec in GCS
+# 4) Build the Dataflow Flex Template spec in GCS
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
@@ -60,7 +70,7 @@ steps:
         --metadata-file=metadata.json \
         --project=${PROJECT_ID}
 
-# 4) Verify template creation
+# 5) Verify template creation
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
@@ -68,25 +78,17 @@ steps:
     - |
       echo "Verifying template was created..."
       gsutil ls -la gs://${_BUCKET}/templates/sc-pipeline.json
+      echo ""
+      echo "=== TEMPLATE BUILD COMPLETE ==="
+      echo "Template location: gs://${_BUCKET}/templates/sc-pipeline.json"
+      echo "Docker image: us-central1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/sc-pipeline:latest"
+      echo ""
+      echo "To run the pipeline manually, use:"
+      echo "gcloud dataflow flex-template run JOB_NAME \\"
+      echo "  --region=${_REGION} \\"
+      echo "  --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \\"
+      echo "  --parameters=\"project=${PROJECT_ID},region=${_REGION},...\""
 
-# 5) Run the pipeline with YOUR REAL VALUES
-- name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
-  entrypoint: bash
-  args:
-    - '-c'
-    - |
-      echo "Starting Dataflow pipeline..."
-      
-      JOB_NAME="sc-pipeline-$(date +%Y%m%d-%H%M%S)"
-      
-      gcloud dataflow flex-template run $${JOB_NAME} \
-        --region=us-central1 \
-        --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \
-        --network=default \
-        --subnetwork=regions/us-central1/subnetworks/default \
-        --max-workers=10 \
-        --parameters="project=${PROJECT_ID},region=us-central1,supplier_sub=supplier.sub,material_sub=material.sub,plant_sub=plant.sub,redis_host=${_REDIS_HOST},id_service_url=${_ID_SERVICE_URL}/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=${_ADB_HOST},adb_port=5432,adb_user=postgres,adb_password=Str0ngP@ss!,adb_db=supplychain"
-      
-      echo "Pipeline $${JOB_NAME} started successfully!"
+# NO JOB EXECUTION STEP - will run this manually from Cloud Shell
 
 timeout: 1800s
