@@ -102,8 +102,6 @@ steps:
         --parameters="adb_user=postgres" \
         --parameters="adb_password=Str0ngP@ss!" \
         --parameters="adb_db=supplychain" \
-        --parameters="job_name=$${JOB_NAME}" \
-        --parameters="service_account_email=${_SERVICE_ACCOUNT}" \
         --max-workers=3 \
         --num-workers=1
       
