@@ -1,25 +1,104 @@
 {
-  "name": "sc-pipeline",
-  "description": "Supplier/Material/Plant streaming to Bronze + AlloyDB upserts",
+  "name": "Supply Chain Pipeline",
+  "description": "Processes supplier, material, and plant data from Pub/Sub to BigQuery and AlloyDB",
   "parameters": [
-    {"name":"project",            "label":"Project",               "helpText":"GCP project ID",                                   "isOptional":false},
-    {"name":"region",             "label":"Region",                "helpText":"Dataflow region, e.g. us-central1",                 "isOptional":false, "default":"us-central1"},
-    {"name":"supplier_sub",       "label":"Supplier subscription", "helpText":"Pub/Sub subscription for supplier events",          "isOptional":false},
-    {"name":"material_sub",       "label":"Material subscription", "helpText":"Pub/Sub subscription for material events",          "isOptional":false},
-    {"name":"plant_sub",          "label":"Plant subscription",    "helpText":"Pub/Sub subscription for plant events",             "isOptional":false},
-    {"name":"redis_host",         "label":"Redis host",            "helpText":"Memorystore Redis hostname (no port)",              "isOptional":false},
-    {"name":"id_service_url",     "label":"ID service URL (/id)",  "helpText":"Authenticated Cloud Run URL for the ID mint API",   "isOptional":false},
-    {"name":"bq_supplier_bronze", "label":"BQ supplier bronze",    "helpText":"BigQuery table <project>:domain_bronze.supplier_bronze",  "isOptional":false},
-    {"name":"bq_material_bronze", "label":"BQ material bronze",    "helpText":"BigQuery table <project>:domain_bronze.material_bronze",  "isOptional":false},
-    {"name":"bq_plant_bronze",    "label":"BQ plant bronze",       "helpText":"BigQuery table <project>:domain_bronze.plant_bronze",     "isOptional":false},
-    {"name":"bq_supplier_dlq",    "label":"BQ supplier DLQ",       "helpText":"BigQuery table for supplier DLQ",                   "isOptional":false},
-    {"name":"bq_material_dlq",    "label":"BQ material DLQ",       "helpText":"BigQuery table for material DLQ",                   "isOptional":false},
-    {"name":"bq_plant_dlq",       "label":"BQ plant DLQ",          "helpText":"BigQuery table for plant DLQ",                      "isOptional":false},
-    {"name":"gcs_temp",           "label":"BQ temp GCS path",      "helpText":"GCS path used by BigQuery IO for temporary files",  "isOptional":false},
-    {"name":"adb_host",           "label":"AlloyDB host",          "helpText":"AlloyDB primary instance IP/host",                  "isOptional":false},
-    {"name":"adb_port",           "label":"AlloyDB port",          "helpText":"AlloyDB port (usually 5432)",                       "isOptional":true,  "default":"5432"},
-    {"name":"adb_user",           "label":"AlloyDB user",          "helpText":"AlloyDB username",                                  "isOptional":false},
-    {"name":"adb_password",       "label":"AlloyDB password",      "helpText":"AlloyDB password (you may pass a Secret)",          "isOptional":false},
-    {"name":"adb_db",             "label":"AlloyDB database",      "helpText":"AlloyDB database name",                             "isOptional":true,  "default":"supplychain"}
+    {
+      "name": "project",
+      "label": "GCP Project ID",
+      "helpText": "The Google Cloud Project ID",
+      "regexes": ["^[a-z][a-z0-9\\-]*[a-z0-9]$"]
+    },
+    {
+      "name": "region",
+      "label": "Region",
+      "helpText": "GCP region for resources",
+      "regexes": ["^[a-z0-9\\-]+$"]
+    },
+    {
+      "name": "supplier_sub",
+      "label": "Supplier Subscription",
+      "helpText": "Pub/Sub subscription for supplier events"
+    },
+    {
+      "name": "material_sub",
+      "label": "Material Subscription", 
+      "helpText": "Pub/Sub subscription for material events"
+    },
+    {
+      "name": "plant_sub",
+      "label": "Plant Subscription",
+      "helpText": "Pub/Sub subscription for plant events"
+    },
+    {
+      "name": "redis_host",
+      "label": "Redis Host",
+      "helpText": "Redis instance IP address"
+    },
+    {
+      "name": "id_service_url",
+      "label": "ID Service URL",
+      "helpText": "URL for the ID resolution service"
+    },
+    {
+      "name": "bq_supplier_bronze",
+      "label": "Supplier Bronze Table",
+      "helpText": "BigQuery table for supplier bronze data"
+    },
+    {
+      "name": "bq_material_bronze",
+      "label": "Material Bronze Table",
+      "helpText": "BigQuery table for material bronze data"
+    },
+    {
+      "name": "bq_plant_bronze",
+      "label": "Plant Bronze Table",
+      "helpText": "BigQuery table for plant bronze data"
+    },
+    {
+      "name": "bq_supplier_dlq",
+      "label": "Supplier DLQ Table",
+      "helpText": "BigQuery table for supplier dead letter queue"
+    },
+    {
+      "name": "bq_material_dlq",
+      "label": "Material DLQ Table",
+      "helpText": "BigQuery table for material dead letter queue"
+    },
+    {
+      "name": "bq_plant_dlq",
+      "label": "Plant DLQ Table", 
+      "helpText": "BigQuery table for plant dead letter queue"
+    },
+    {
+      "name": "gcs_temp",
+      "label": "GCS Temp Location",
+      "helpText": "GCS bucket path for temporary files"
+    },
+    {
+      "name": "adb_host",
+      "label": "AlloyDB Host",
+      "helpText": "AlloyDB instance IP address"
+    },
+    {
+      "name": "adb_port",
+      "label": "AlloyDB Port",
+      "helpText": "AlloyDB port number",
+      "regexes": ["^[0-9]+$"]
+    },
+    {
+      "name": "adb_user",
+      "label": "AlloyDB User",
+      "helpText": "AlloyDB username"
+    },
+    {
+      "name": "adb_password",
+      "label": "AlloyDB Password",
+      "helpText": "AlloyDB password"
+    },
+    {
+      "name": "adb_db",
+      "label": "AlloyDB Database",
+      "helpText": "AlloyDB database name"
+    }
   ]
 }
