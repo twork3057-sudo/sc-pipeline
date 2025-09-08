@@ -18,7 +18,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Copy all application files to the template directory
-COPY . /template/
+COPY main.py /template/
+COPY metadata.json /template/
 
 # Set the working directory
 WORKDIR /template
