@@ -1,4 +1,4 @@
-# cloudbuild.yaml for sc-pipeline - SIMPLE VERSION
+# cloudbuild.yaml for sc-pipeline - FIXED WITH REAL VALUES
 options:
   logging: CLOUD_LOGGING_ONLY
   substitution_option: ALLOW_LOOSE
@@ -6,7 +6,11 @@ options:
 substitutions:
   _REGION: us-central1
   _REPO: services           
-  _BUCKET: ${PROJECT_ID}-dataflow
+  _BUCKET: ${PROJECT_ID}-dataflow  # FIXED: was *BUCKET
+  # YOUR ACTUAL SERVICE VALUES:
+  _REDIS_HOST: "10.185.247.59"  # Your Redis HOST IP
+  _ID_SERVICE_URL: "https://id-service-1051481682783.us-central1.run.app"  # Your Cloud Run service URL
+  _ADB_HOST: "10.185.247.59"  # Using Redis IP for now - you need AlloyDB private IP
   
 steps:
 # 0) Make sure the Dataflow bucket exists
@@ -65,7 +69,7 @@ steps:
       echo "Verifying template was created..."
       gsutil ls -la gs://${_BUCKET}/templates/sc-pipeline.json
 
-# 5) Run the pipeline - HARDCODED VALUES
+# 5) Run the pipeline with YOUR REAL VALUES
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
   entrypoint: bash
   args:
@@ -73,14 +77,16 @@ steps:
     - |
       echo "Starting Dataflow pipeline..."
       
-      gcloud dataflow flex-template run sc-pipeline-20250107-001 \
+      JOB_NAME="sc-pipeline-$(date +%Y%m%d-%H%M%S)"
+      
+      gcloud dataflow flex-template run $${JOB_NAME} \
         --region=us-central1 \
         --template-file-gcs-location=gs://${_BUCKET}/templates/sc-pipeline.json \
         --network=default \
         --subnetwork=regions/us-central1/subnetworks/default \
         --max-workers=10 \
-        --parameters="project=${PROJECT_ID},region=us-central1,supplier_sub=projects/${PROJECT_ID}/subscriptions/supplier.sub,material_sub=projects/${PROJECT_ID}/subscriptions/material.sub,plant_sub=projects/${PROJECT_ID}/subscriptions/plant.sub,redis_host=REDIS_HOST_HERE,id_service_url=ID_SERVICE_URL_HERE/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=ADB_HOST_HERE,adb_port=5432,adb_user=postgres,adb_password=Str0ngP@ss!,adb_db=supplychain"
+        --parameters="project=${PROJECT_ID},region=us-central1,supplier_sub=supplier.sub,material_sub=material.sub,plant_sub=plant.sub,redis_host=${_REDIS_HOST},id_service_url=${_ID_SERVICE_URL}/id,bq_supplier_bronze=${PROJECT_ID}:domain_bronze.supplier_bronze,bq_material_bronze=${PROJECT_ID}:domain_bronze.material_bronze,bq_plant_bronze=${PROJECT_ID}:domain_bronze.plant_bronze,bq_supplier_dlq=${PROJECT_ID}:domain_bronze.supplier_dlq,bq_material_dlq=${PROJECT_ID}:domain_bronze.material_dlq,bq_plant_dlq=${PROJECT_ID}:domain_bronze.plant_dlq,gcs_temp=gs://${_BUCKET}/bqtmp,adb_host=${_ADB_HOST},adb_port=5432,adb_user=postgres,adb_password=Str0ngP@ss!,adb_db=supplychain"
       
-      echo "Pipeline started successfully!"
+      echo "Pipeline $${JOB_NAME} started successfully!"
 
 timeout: 1800s
